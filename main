@@ -1,0 +1,165 @@
+from pyPS4Controller.controller import Controller
+from roboclaw_3 import Roboclaw
+import time
+import serial
+from adafruit_servokit import ServoKit
+import digitalio
+import board
+import sys
+from collision_sensors import get_distance_front, get_distance_back 
+import threading
+
+kit = ServoKit(channels=16)
+
+# Status Lights 
+gun = digitalio.DigitalInOut(board.D18) #Define Pin is = 12 
+gun.direction = digitalio.Direction.OUTPUT
+Blue_light = digitalio.DigitalInOut(board.D22) #Define Pin is = 15
+Blue_light.direction = digitalio.Direction.OUTPUT
+Stand_by = digitalio.DigitalInOut(board.D6) #Define Pin is = 
+Stand_by .direction = digitalio.Direction.OUTPUT
+
+
+serial_port = serial.Serial(
+    port="/dev/ttyACM0",
+    baudrate=115200,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE,
+)
+serial_port = serial.Serial(
+    port="/dev/ttyACM1",
+    baudrate=115200,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE,
+)
+# Motor Controller Port Info 
+roboclaw_1 = Roboclaw("/dev/ttyACM0", 115200)
+roboclaw_2 = Roboclaw("/dev/ttyACM1", 115200)
+roboclaw_1.Open()
+roboclaw_2.Open()
+address = 0x81
+
+# On Connect Commands 
+def connect():
+    Blue_light.value = True
+
+    pass
+def disconnect():
+    Blue_light.value = False
+    roboclaw_1.SpeedM1M2(address, 0, 0)
+    roboclaw_2.SpeedM1M2(address, 0, 0)
+    pass
+# Define a function to read the distance from sensor 1
+distanceforward = get_distance_front()
+distancerear = get_distance_back()
+
+try:
+    class MyController(Controller):
+        def __init__(self, **kwargs):
+            Controller.__init__(self, **kwargs)
+    # Gimbal Rotation: 
+        def on_L2_press(self, value):
+            value = value / 70000
+            print("Gimbal Horizontal Rotation", value)
+            kit.continuous_servo[2].throttle = value
+        def on_R2_press(self, value):
+            value = -value / 70000
+            print("Gimbal Vertical Rotation", value)
+            kit.continuous_servo[1].throttle = value
+    # Plow Motion: 
+        def on_down_arrow_press(self):
+            print("Plow Down")
+            kit.continuous_servo[0].throttle = 0.3
+        def on_up_arrow_press(self):
+            print("Plow Up")
+            kit.continuous_servo[0].throttle = -0.2
+        def on_up_down_arrow_release(self):
+            kit.continuous_servo[0].throttle = 0.1
+    # Left and Right Motion:
+        def on_L3_left(self, value):
+            value = -value // 13
+            print("Strafe Left", value)
+            roboclaw_1.SpeedM1M2(address, value, value)
+            roboclaw_2.SpeedM1M2(address, -value, -value)
+        def on_L3_right(self, value):
+            value = value // 13
+            print("Strafe Right", value)
+            roboclaw_1.SpeedM1M2(address, -value, -value)
+            roboclaw_2.SpeedM1M2(address, value, value)
+    # Rotation Motion: 
+        def on_R3_down(self, value):
+            value = value + 32767
+            value = value // 26
+            print("Counter-Clockwise Rotaion", value)
+            roboclaw_1.SpeedM1M2(address, -value, -value)
+            roboclaw_2.SpeedM1M2(address, -value, -value)
+        def on_R3_up(self, value): 
+            value = value + 32767
+            value = value // 26
+            print("Counter-Clockwise",  value)
+            roboclaw_1.SpeedM1M2(address, -value, -value)
+            roboclaw_2.SpeedM1M2(address, -value, -value)
+        def on_R3_right(self, value):
+            value = value + 32767
+            value = value // 26
+            roboclaw_1.SpeedM1M2(address, value, value)
+            roboclaw_2.SpeedM1M2(address, value, value)
+        def on_R3_left(self, value):
+            value = value + 32767
+            value = value // 26
+            roboclaw_1.SpeedM1M2(address, value, value)
+            roboclaw_2.SpeedM1M2(address, value, value)
+    # Forward and Backward Motion: 
+        def on_L3_up(self, value):
+            value = -value // 13
+            print ("Forward:", value)
+            roboclaw_1.SpeedM1M2(address, value, -value)
+            roboclaw_2.SpeedM1M2(address, -value, value)
+        def on_L3_y_at_rest(self):
+            roboclaw_1.SpeedM1M2(address, 0, 0)
+            roboclaw_2.SpeedM1M2(address, 0, 0)
+        def on_L3_x_at_rest(self):
+            roboclaw_1.SpeedM1M2(address, 0, 0)
+            roboclaw_2.SpeedM1M2(address, 0, 0)
+        def on_L3_down(self, value):
+            value = value // 13
+            print("Backward", value)
+            roboclaw_1.SpeedM1M2(address, -value, value)
+            roboclaw_2.SpeedM1M2(address, value, -value)
+    # Relay Switch Active/ Gun Fire:
+        def on_R1_press (self):
+            gun.value = True
+        def on_R1_release(self):
+            gun.value = False
+    # E-Stop of Code: 
+        def on_share_press(self):
+            roboclaw_1.SpeedM1M2(address, 0, 0)
+            roboclaw_2.SpeedM1M2(address, 0, 0)
+            sys.exit()
+
+        if distanceforward <= 5:
+            roboclaw_1.SpeedM1M2(address, 0, 0)
+            roboclaw_2.SpeedM1M2(address, 0, 0)
+            time.sleep(4)
+            roboclaw_1.SpeedM1M2(address, -1000, 1000)
+            roboclaw_2.SpeedM1M2(address, 1000, -1000)
+            time.sleep(1)
+
+        if distancerear <= 5:
+            roboclaw_1.SpeedM1M2(address, 0, 0)
+            roboclaw_2.SpeedM1M2(address, 0, 0)
+            time.sleep(4)
+            roboclaw_1.SpeedM1M2(address, 1000, -1000)
+            roboclaw_2.SpeedM1M2(address, -1000, 1000)
+            time.sleep(1)
+        
+
+
+except KeyboardInterrupt:
+    print("System Exiting")
+    serial_port.flush()
+
+controller = MyController(interface="/dev/input/js0", connecting_using_ds4drv=False)
+controller.listen(on_connect = connect, on_disconnect = disconnect)
