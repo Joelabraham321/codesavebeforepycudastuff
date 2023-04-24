@@ -1,0 +1,75 @@
+import time
+import board
+import digitalio
+
+# Define the trigger and echo pins for each sensor
+sensor1_trigger = digitalio.DigitalInOut(board.D9)#21
+sensor1_echo = digitalio.DigitalInOut(board.D10)#19
+sensor2_trigger = digitalio.DigitalInOut(board.D8)#24
+sensor2_echo = digitalio.DigitalInOut(board.D25) #22
+
+# Set the trigger pins as outputs and the echo pins as inputs
+sensor1_trigger.direction = digitalio.Direction.OUTPUT
+sensor1_echo.direction = digitalio.Direction.INPUT
+sensor2_trigger.direction = digitalio.Direction.OUTPUT
+sensor2_echo.direction = digitalio.Direction.INPUT
+
+# Define a function to read the distance from sensor 1
+
+
+def get_distance_back():
+    while True: 
+    # Send a 10 microsecond pulse to the trigger pin to start a measurement
+        pulse_start = 0 
+        pulse_end = 0
+        sensor1_trigger.value = True
+        time.sleep(0.00001)
+        sensor1_trigger.value = False
+        
+        while sensor1_echo.value == False: 
+            pulse_start = time.monotonic()
+        while sensor1_echo.value == True: 
+            pulse_end = time.monotonic()
+            
+            
+        # Calculate the duration of the pulse and convert it to distance in inches
+        pulse_duration = pulse_end - pulse_start
+        distance1 = (pulse_duration * 13500) / 2 # Speed of sound in inches per second / 2
+        distance1 = round(distance1, 2)
+        if distance1 <= 0 or distance1 > 157:
+            continue
+        return distance1 
+    
+
+# Define a function to read the distance from sensor 2
+def get_distance_front():
+    while True: 
+        pulse_start = 0 
+        pulse_end = 0
+
+        # Send a 10 microsecond pulse to the trigger pin to start a measurement
+        sensor2_trigger.value = True
+        time.sleep(0.00001)
+        sensor2_trigger.value = False  
+        while sensor2_echo.value == False: 
+            pulse_start = time.monotonic()
+        while sensor2_echo.value == True: 
+            pulse_end = time.monotonic()
+            
+        # Calculate the duration of the pulse and convert it to distance in inches
+        pulse_duration = pulse_end - pulse_start
+        distance2 = (pulse_duration * 13500) / 2 # Speed of sound in inches per second / 2
+        distance2 = round (distance2, 2)
+        if distance2 <= 0 or distance2 > 157:
+            continue
+        return distance2 
+
+
+#Loop to continuously read and print the distances from both sensors
+"""while True:
+    distance1 = get_distance_back()
+    distance2 = get_distance_front()
+    print ("this is sensor back", distance1, "inches")
+    print ("this is sensor front", distance2, "inches")
+
+    time.sleep(0.1)"""
