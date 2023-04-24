@@ -1,0 +1,40 @@
+import cv2
+
+
+# Open the first camera
+cap1 = cv2.VideoCapture(0)
+cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+
+# Open the second camera
+cap2 = cv2.VideoCapture(1)
+cap2.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap2.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+
+# Set the resolution of the output window
+width = 640
+height = 360
+
+# Start the loop
+while True:
+    # Get the frames from the cameras
+    ret1, frame1 = cap1.read()
+    ret2, frame2 = cap2.read()
+
+    # Combine the frames into a single window
+    frame = cv2.hconcat([frame1, frame2])
+
+    # Resize the window to the desired resolution
+    frame = cv2.resize(frame, (width, height))
+
+    # Display the resulting window
+    cv2.imshow('VIDEO', frame)
+
+    # Break the loop if 'q' is pressed
+    if cv2.waitKey(1) == ord('q'):
+        break
+
+# Release the cameras and close the window
+cap1.release()
+cap2.release()
+cv2.destroyAllWindows()
