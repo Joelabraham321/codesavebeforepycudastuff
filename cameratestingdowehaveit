@@ -1,0 +1,47 @@
+import cv2
+from flask import Flask, Response
+
+
+
+app = Flask(__name__)
+
+def gen_frames():
+    try:
+        cap1 = cv2.VideoCapture(0) # First USB camera
+        #cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        #cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+        cap2 = cv2.VideoCapture(1) # Second USB camera
+        #cap2.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        #cap2.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+        while True:
+            # Capture frame-by-frame from both cameras44
+            ret1, frame1 = cap1.read()
+            ret2, frame2 = cap2.read()
+            
+            # If either frame is empty, break the loop
+            if not ret1 or not ret2:
+                break
+            
+            # Combine the frames horizontally
+            combined_frame = cv2.hconcat([frame1, frame2])
+            
+            # Encode the frame as JPEG
+            ret, buffer = cv2.imencode('.jpg', combined_frame)
+            
+            # Yield the frame as a byte string
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+    except:
+        cap1.release()
+        cap2.release()
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == '__main__':
+    app.run(host='192.168.1.172', port=8800, debug=True)
+
+
