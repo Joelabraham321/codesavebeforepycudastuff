@@ -1,0 +1,57 @@
+import cv2
+import numpy as np
+import pycuda.driver as cuda
+import pycuda 
+from pycuda.compiler import SourceModule
+from pycuda.gpuarray import to_gpu, from_gpu
+
+# Load the NVIDIA Video Codec SDK libraries
+from nvdec import NvDecoder
+from nvenc import NvEncoder
+
+# Set up the USB camera streams
+cap1 = cv2.VideoCapture(0)
+cap2 = cv2.VideoCapture(1)
+
+# Set up the CUDA kernel for image processing
+mod = SourceModule("""
+    __global__ void process_image(unsigned char *input, unsigned char *output, int width, int height) {
+        int idx = threadIdx.x + blockIdx.x * blockDim.x;
+        int idy = threadIdx.y + blockIdx.y * blockDim.y;
+        if (idx < width && idy < height) {
+            int pos = (idy * width + idx) * 3;
+            output[pos] = input[pos+2];
+            output[pos+1] = input[pos+1];
+            output[pos+2] = input[pos];
+        }
+    }
+""")
+
+process_image_kernel = mod.get_function("process_image")
+
+# Set up the CUDA streams for asynchronous processing
+cuda_stream1 = cuda.Stream()
+cuda_stream2 = cuda.Stream()
+
+# Loop over the camera streams and process each frame
+while True:
+    ret1, frame1 = cap1.read()
+    ret2, frame2 = cap2.read()
+    if not ret1 or not ret2:
+        break
+    
+    # Decode the frames with the NVIDIA Video Codec SDK
+    decoder1 = NvDecoder()
+    decoder2 = NvDecoder()
+    decoder1.decode(frame1)
+    decoder2.decode(frame2)
+    
+    # Transfer the frames to the GPU
+    input1_gpu = to_gpu(decoder1.frame().astype(np.uint8))
+    input2_gpu = to_gpu(decoder2.frame().astype(np.uint8))
+    output1_gpu = cuda.mem_alloc(input1_gpu.nbytes)
+    output2_gpu = cuda.mem_alloc(input2_gpu.nbytes)
+    
+    # Process the frames on the GPU
+    block_size = (32, 32, 1)
+    grid_size1 = (input1_gpu.shape[1] // block_size[0] + 1, input1_gpu.shape[0] // block_size[1])
