@@ -1,0 +1,34 @@
+
+
+import threading
+import ps4controller
+import time
+from evdev import InputDevice, ecodes, list_devices
+from ps4controller import controller
+
+global_value = 0
+
+def on_L3_left(value):
+    pass
+
+def continuous_handler():
+    global global_value
+    while True:
+        controller = InputDevice(list_devices()[0])
+        for event in controller.read_loop():
+            if event.type == ecodes.EV_ABS:
+                if event.code == ecodes.ABS_X:
+                    global_value = event.value / 32767.0  # normalize to [-1, 1]
+                    time.sleep(0.1)
+
+continuous_thread = threading.Thread(target=continuous_handler)
+continuous_thread.start()
+
+controller = InputDevice(list_devices()[0])
+for event in controller.read_loop():
+    if event.type == ecodes.EV_KEY:
+        if event.code == ecodes.BTN_SOUTH:
+            break
+    elif event.type == ecodes.EV_ABS:
+        if event.code == ecodes.ABS_X:
+            on_L3_left(event.value / 32767.0)  # normalize to [-1, 1]
