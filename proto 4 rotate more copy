@@ -1,0 +1,300 @@
+import threading
+from pyPS4Controller.controller import Controller
+from adafruit_servokit import ServoKit
+import time
+import math
+from roboclaw_3 import Roboclaw
+import serial
+import sys
+import digitalio
+import board
+
+from collision_sensors import get_distance_front, get_distance_back 
+
+kit = ServoKit(channels=16)
+baud = 38400
+
+# Status Lights 
+gun = digitalio.DigitalInOut(board.D18) #Define Pin is = 12 
+gun.direction = digitalio.Direction.OUTPUT
+Blue_light = digitalio.DigitalInOut(board.D22) #Define Pin is = 15
+Blue_light.direction = digitalio.Direction.OUTPUT
+Stand_by = digitalio.DigitalInOut(board.D6) #Define Pin is = 
+Stand_by .direction = digitalio.Direction.OUTPUT
+
+
+E_Stop = digitalio.DigitalInOut(board.D24) #E Stop
+E_Stop.direction = digitalio.Direction.OUTPUT
+
+
+serial_port = serial.Serial(
+    port="/dev/ttyACM0",
+    baudrate = baud,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_TWO,
+)
+serial_port = serial.Serial(
+    port="/dev/ttyACM1",
+    baudrate = baud,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_TWO,)
+
+roboclaw_1 = Roboclaw("/dev/ttyACM0", baud)
+roboclaw_2 = Roboclaw("/dev/ttyACM1", baud)
+roboclaw_1.Open()
+roboclaw_2.Open()
+address = 0x81
+
+xdivided = 0.0
+ydivided = 0.0
+power = 0.0
+theta = 0.0
+
+sin = 0.0
+cos = 0.0
+
+maximum = 0.0
+
+lfpower = 0.0
+rfpower = 0.0
+lrpower = 0.0
+rrpower = 0.0
+distanceforward = 100
+distancerear = 100
+
+leftmag = 0.0
+rightmag = 0.0
+turn = 0.0
+disconnected = False
+
+def Distance_front():
+    global distanceforward
+    while True:
+        distanceforward = get_distance_front()
+        time.sleep(0.1)
+        
+def Distance_rear():
+    global distancerear
+    while True:
+        distancerear = get_distance_back()
+        time.sleep(0.1)
+
+
+class MySecondController(Controller):
+    def __init__(self, **kwargs):
+        Controller.__init__(self, **kwargs)
+    # E-Stop 
+    def on_share_press (self):
+        E_Stop.value = False
+    def on_share_release(self):
+        E_Stop.value = True
+
+    def on_L3_y_at_rest(self):
+        True
+            
+    def on_L3_x_at_rest(self):
+        True
+       
+
+# Relay Switch Active/ Gun Fire:
+    def on_R1_press (self):
+        gun.value = True
+    def on_R1_release(self):
+        gun.value = False
+# Plow Motion: 
+    def on_down_arrow_press(self):
+        print("Plow Down")
+        kit.continuous_servo[0].throttle = 0.3
+    def on_up_arrow_press(self):
+        print("Plow Up")
+        kit.continuous_servo[0].throttle = -0.2
+    def on_up_down_arrow_release(self):
+        kit.continuous_servo[0].throttle = 0.1
+# Gimbal Rotation: 
+    def on_L2_press(self, value):
+        value = (value / 70000)+.1
+        print("Gimbal Horizontal Rotation", value)
+        kit.continuous_servo[2].throttle = value
+    def on_R2_press(self, value):
+
+        value = (-value / 70000)+.1
+        print("Gimbal Vertical Rotation", value)
+        kit.continuous_servo[1].throttle = value
+
+#To not output position to terminal
+    def on_L3_up(self, value):
+        True
+
+    def on_L3_down(self, value):
+        True
+
+    def on_L3_left(self, magnitude):
+        True
+        
+    def on_L3_right(self, magnitude):
+        True
+
+# Rotation Motion: 
+    def on_R3_down(self, magnitude):
+        True
+    def on_R3_up(self, magnitude): 
+        True
+    def on_R3_right(self, magnitude):
+        True
+    def on_R3_left(self, magnitude):
+        True
+    
+        
+class MyController(Controller):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.left_stick_x = 0.0
+        self.left_stick_y = 0.0
+        self.left_trigger = 0.0
+        self.right_trigger = 0.0
+    # On Connect Commands 
+    
+    def on_L3_up(self, magnitude):
+        self.left_stick_y = -float(magnitude)
+
+    def on_L3_down(self, magnitude):
+        self.left_stick_y = -float(magnitude)
+
+    def on_L3_left(self, magnitude):
+        self.left_stick_x = float(magnitude)
+        
+    def on_L3_right(self, magnitude):
+        self.left_stick_x = float(magnitude)
+
+    # Rotation Motion: 
+    def on_R3_down(self, value):
+        True
+    def on_R3_up(self, value): 
+        True
+    def on_R3_right(self, value):
+        True
+    def on_R3_left(self, value):
+        True
+    
+        
+    def on_L2_press(self, value):
+        self.left_trigger = (32767 + float(value))/65534
+    def on_R2_press(self, value):
+        self.right_trigger = -(32767 + float(value))/65534
+
+    def MotorMover(self):
+        while True:
+            global xdivided 
+            global ydivided 
+            global power
+            global theta
+            global sin
+            global cos
+            global maximum
+            global leftmag
+            global rightmag
+            global turn
+            global distancerear
+            global distanceforward
+
+            xdivided = self.left_stick_x / 32767
+            ydivided = self.left_stick_y / 32767
+            theta = math.atan2(ydivided,xdivided)
+            power = math.hypot(xdivided,ydivided)
+
+            sin = math.sin(theta - math.pi/4)
+            cos = math.cos(theta - math.pi/4)
+
+            maximum = max(abs(sin),abs(cos))
+
+            global lfpower 
+            global rfpower
+            global lrpower 
+            global rrpower
+            global disconnected
+            
+            leftmag = self.left_trigger
+            rightmag = self.right_trigger
+
+            turn = leftmag + rightmag
+
+            if distanceforward < 10:
+                power = power * 0
+                
+            if distancerear < 10:
+                power = power * 0
+
+            if power < 0.1:
+                power = 0
+            if -0.05 < turn < 0.05:
+                turn = 0
+
+            lfpower = int(((power *cos/maximum)+turn)*2000)
+            rfpower = int(((power *sin/maximum)-turn)*2000)
+            lrpower = int(((power *sin/maximum)+turn)*2000)
+            rrpower = int(((power *cos/maximum)-turn)*2000)
+
+            print('Turn: ', turn)
+            print('Left Front: ', lfpower)
+            print('Right Front: ', rfpower)
+            print('Left Rear: ', lrpower)
+            print('Rear Rear: ', rrpower)
+            print('power = ', power)
+            print('---------------------')
+
+            roboclaw_1.SpeedM1(address, -lfpower)
+            roboclaw_1.SpeedM2(address, rfpower)
+            roboclaw_2.SpeedM1(address, rrpower)
+            roboclaw_2.SpeedM2(address, -lrpower)
+
+            print("distance front:", distanceforward)
+            print("distance rear:", distancerear)
+
+            time.sleep(0.09)
+
+
+    def isconnected(self):
+            def connect():
+                Blue_light.value = True
+                pass
+            def disconnect():
+                global disconnected
+                Blue_light.value = False
+                disconnected = True
+                pass
+
+    
+    def ControlMan(self):
+        while True:
+            
+            global distanceforward 
+            global distancerear
+            global power
+            distanceforward = get_distance_front()
+            distancerear = get_distance_back()
+
+            while distancerear < 5:
+                power = 0
+
+
+#threading part, announce what functions will be threads
+secondcontroller = MySecondController(interface="/dev/input/js0", connecting_using_ds4drv=False)
+secondcontrollerthread = threading.Thread(target=secondcontroller.listen)
+controller = MyController(interface="/dev/input/js0")
+controllerthread = threading.Thread(target=controller.listen)
+MotorMoveThread = threading.Thread(target=controller.MotorMover)
+ControlManThread = threading.Thread(target=controller.ControlMan)
+distanceforwardthread = threading.Thread(target=Distance_front)
+distancerearthread = threading.Thread(target=Distance_rear)
+#start the threads
+secondcontrollerthread.start()
+controllerthread.start()
+MotorMoveThread.start()
+distancerearthread.start()
+distanceforwardthread.start()
+
+
+
+
