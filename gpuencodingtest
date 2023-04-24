@@ -1,0 +1,74 @@
+import cv2
+import numpy as np
+from flask import Flask, Response
+import pycuda.autoinit
+import pycuda.driver as cuda
+import tensorrt as trt
+
+app = Flask(__name__)
+
+# Set up the encoding session
+encoder = trt.nvenc.Encoder()
+encoder.createEncoder()
+
+encoder.setWidth(width)
+encoder.setHeight(height)
+encoder.setFrameRate(frame_rate)
+encoder.setBitRate(bit_rate)
+encoder.setGOP(gop)
+encoder.setCodec(codec)
+
+# Allocate input and output buffers
+input_buffer = cuda.mem_alloc(input_size)
+output_buffer = cuda.mem_alloc(output_size)
+
+def gen_frames():  # generate frame by frame from cameras
+    while True:
+        # Capture frame from cameras
+        ret, frame1 = cap1.read()
+        ret, frame2 = cap2.read()
+
+        # Resize the frames to a common size
+        frame1 = cv2.resize(frame1, (width, height))
+        frame2 = cv2.resize(frame2, (width, height))
+
+        # Convert the frames to YUV format
+        yuv_frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV_I420)
+        yuv_frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2YUV_I420)
+
+        # Copy the frames to the input buffers
+        cuda.memcpy_htod(input_buffer, yuv_frame1)
+        cuda.memcpy_htod(input_buffer + input_size, yuv_frame2)
+
+        # Encode the frames using the GPU
+        bitstream1 = encoder.encodeFrame(input_buffer, output_buffer)
+        bitstream2 = encoder.encodeFrame(input_buffer + input_size, output_buffer + output_size)
+
+        # Combine the bitstreams into a single bitstream
+        bitstream = bitstream1 + bitstream2
+
+        # Convert the bitstream to a byte array
+        byte_stream = bytearray(bitstream)
+
+        # Yield the byte stream as a Flask response
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + byte_stream + b'\r\n')
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == '__main__':
+    # Set up the cameras
+    cap1 = cv2.VideoCapture(0)
+    cap2 = cv2.VideoCapture(1)
+
+    # Start the Flask app
+    app.run(host='0.0.0.0', port='5000', debug=True)
+
+    # Release resources
+    cap1.release()
+    cap2.release()
+    encoder.destroyEncoder()
+    cuda.mem_free(input_buffer)
+    cuda.mem_free(output_buffer)
